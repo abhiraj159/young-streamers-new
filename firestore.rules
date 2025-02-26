@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+     // ✅ Live Streams
+    match /liveStreams/{streamId} {
+      allow read: if true; // Anyone can read live stream info
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid; // Only the broadcaster can create
+      allow update: if request.auth != null && request.resource.data.userId == request.auth.uid; // Only the broadcaster can update (e.g., to end the stream)
+      allow delete: if request.auth != null && request.resource.data.userId == request.auth.uid; // Only the broadcaster can delete
+    }
+
+    // ✅ Signaling Data (for WebRTC)
+    match /signaling/{streamId}/{signalId} {
+      allow read: if true; // Anyone can read signaling data (needed for WebRTC)
+      allow write: if true; // Anyone can write signaling data (needed for WebRTC)
+    }
+
+    // ✅ Notifications
+    match /notifications/{userId}/followers/{notificationId} {
+      allow read: if request.auth != null && request.auth.uid == userId; // Only the user can read their notifications
+      allow write: if request.auth != null && request.auth.uid == userId; // Only the user can send notifications to their followers
+    }
+
+    // ✅ Users Collection
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ✅ Messages (1-to-1 Chat)
+    match /messages/{messageId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid == resource.data.senderId || request.auth.uid == resource.data.receiverId);
+      
+      allow write: if request.auth != null &&
+        (request.auth.uid == request.resource.data.senderId);
+
+      allow delete: if request.auth != null &&
+        (request.auth.uid == resource.data.senderId || request.auth.uid in get(/databases/$(database)/documents/users/$(resource.data.receiverId)).data.blockedUsers);
+    }
+
+    // ✅ Group Chats
+    match /groups/{groupId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.adminId; 
+
+      // ✅ Group Messages
+      match /groupMessages/{messageId} {
+        allow read: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+        
+        allow create: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+        
+        allow delete: if request.auth != null && (
+          request.auth.uid == resource.data.senderId || 
+          request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.adminId
+        );
+      }
+    }
+
+    // ✅ Chat History
+    match /chatHistory/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ✅ Followers / Following System
+    match /followers/{userId} {
+      allow read;
+      allow write: if request.auth != null;
+    }
+
+    match /following/{userId} {
+      allow read;
+      allow write: if request.auth != null;
+    }
+
+    // ✅ Function to check if an array exists
+    function isArray(data) {
+      return data is list;
+    }
+
+    // ✅ Default catch-all rule (REMOVE THIS IN PRODUCTION)
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
